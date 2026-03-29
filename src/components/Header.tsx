@@ -1,9 +1,9 @@
 export function Header() {
   return (
     <header className="bg-gray-900 text-white">
-      <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-0">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold tracking-tight">NEXUS スクリーナー</h1>
+          <h1 className="text-lg sm:text-xl font-bold tracking-tight">NEXUS スクリーナー</h1>
           <span className="text-xs text-gray-400 bg-gray-800 px-2 py-0.5 rounded">v3.2.1</span>
         </div>
         <div className="text-xs text-gray-400">買い集め検出</div>

@@ -42,11 +42,11 @@ export function ScreenerDashboard() {
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-4">
       {/* コントロールバー */}
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 flex-wrap">
         <button
           onClick={handleRun}
           disabled={running}
-          className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white rounded-lg px-6 py-2.5 text-sm font-medium transition-colors flex items-center gap-2"
+          className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white rounded-lg px-6 py-2.5 text-sm font-medium transition-colors flex items-center justify-center gap-2"
         >
           {running ? (
             <>
@@ -60,20 +60,20 @@ export function ScreenerDashboard() {
 
         <button
           onClick={() => setShowExclusion(true)}
-          className="bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg px-4 py-2.5 text-sm transition-colors"
+          className="w-full sm:w-auto bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg px-4 py-2.5 text-sm transition-colors"
         >
           除外リスト管理
         </button>
 
         <button
           onClick={() => setShowBacktest(!showBacktest)}
-          className="bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg px-4 py-2.5 text-sm transition-colors"
+          className="w-full sm:w-auto bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg px-4 py-2.5 text-sm transition-colors"
         >
           {showBacktest ? 'バックテスト閉じる' : 'Recall検証'}
         </button>
 
         {results && (
-          <span className="text-sm text-gray-400 ml-auto">
+          <span className="text-sm text-gray-400 sm:ml-auto">
             {results.length}銘柄検出
           </span>
         )}

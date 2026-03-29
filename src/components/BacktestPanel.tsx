@@ -136,8 +136,8 @@ export function BacktestPanel() {
 
   return (
     <div className="bg-gray-900 rounded-lg p-6 border border-gray-700">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-bold text-white">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0 mb-4">
+        <h3 className="text-base sm:text-lg font-bold text-white">
           グラウンドトゥルース検証（Recall テスト）
         </h3>
         <button
@@ -166,7 +166,7 @@ export function BacktestPanel() {
 
       {results.length > 0 && (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm min-w-[600px]">
             <thead>
               <tr className="text-left text-gray-500 border-b border-gray-700">
                 <th className="py-2 px-2">#</th>

@@ -88,16 +88,17 @@ export function ResultTable({ results }: Props) {
       {/* 結果行 */}
       {sorted.map((r) => (
         <div key={r.code}>
+          {/* デスクトップ: グリッド行 */}
           <div
             onClick={() =>
               setExpandedCode(expandedCode === r.code ? null : r.code)
             }
-            className={`grid grid-cols-12 gap-2 px-3 py-2.5 rounded-lg cursor-pointer hover:bg-gray-700/50 transition-colors border border-transparent ${scoreColor(
+            className={`hidden md:grid grid-cols-12 gap-2 px-3 py-2.5 rounded-lg cursor-pointer hover:bg-gray-700/50 transition-colors border border-transparent ${scoreColor(
               r.score.total,
             )} ${expandedCode === r.code ? 'bg-gray-800' : 'bg-gray-800/50'}`}
           >
             {/* 銘柄 */}
-            <div className="col-span-3 md:col-span-3">
+            <div className="col-span-3">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500 font-mono">{r.code.slice(0, 4)}</span>
                 <span className="text-sm text-white truncate">{r.name}</span>
@@ -177,9 +178,45 @@ export function ResultTable({ results }: Props) {
             </div>
           </div>
 
+          {/* モバイル: カードレイアウト */}
+          <div
+            onClick={() =>
+              setExpandedCode(expandedCode === r.code ? null : r.code)
+            }
+            className={`md:hidden rounded-lg cursor-pointer hover:bg-gray-700/50 transition-colors border border-transparent px-3 py-3 space-y-2 ${scoreColor(
+              r.score.total,
+            )} ${expandedCode === r.code ? 'bg-gray-800' : 'bg-gray-800/50'}`}
+          >
+            {/* 1行目: コード・名前 + スコア */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-xs text-gray-500 font-mono shrink-0">{r.code.slice(0, 4)}</span>
+                <span className="text-sm text-white truncate">{r.name}</span>
+              </div>
+              <div className="flex items-center gap-1 shrink-0 ml-2">
+                <span className="text-lg font-bold text-white">{r.score.total}</span>
+                <span className="text-xs text-gray-500">/10</span>
+              </div>
+            </div>
+
+            {/* 2行目: バッジ群 */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`text-xs px-1.5 py-0.5 rounded font-bold text-white ${shelfBadge(r.shelf)}`}>
+                {r.shelf}
+              </span>
+              <span className="text-xs text-gray-300">{r.patternType}</span>
+              <span className={`text-xs px-1.5 py-0.5 rounded ${phaseBadge(r.phase)}`}>
+                {r.phase}
+              </span>
+              <span className="text-xs text-gray-400 font-mono ml-auto">
+                Q{r.quietCount}/S{r.shakeoutCount}
+              </span>
+            </div>
+          </div>
+
           {/* フラグ */}
           {(r.flags.recentHighWithin5Days || r.flags.postSpikeConsolidation || r.flags.ignited) && (
-            <div className="flex gap-1 px-3 py-1">
+            <div className="flex gap-1 px-3 py-1 flex-wrap">
               {r.flags.ignited && (
                 <span className="text-[10px] bg-red-900/50 text-red-300 px-1.5 py-0.5 rounded">
                   点火済み

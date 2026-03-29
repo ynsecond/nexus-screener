@@ -21,11 +21,11 @@ export function MarketFilter({ condition }: Props) {
 
   return (
     <div className={`rounded-lg p-3 border ${colorMap[condition.mode]}`}>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-0">
         <div>
           <span className="text-sm font-medium">地合い: {modeLabel[condition.mode]}</span>
         </div>
-        <div className="text-sm">
+        <div className="text-xs sm:text-sm">
           TOPIX 25日線乖離率: <span className="font-mono">{condition.topix25maDeviation.toFixed(2)}%</span>
         </div>
       </div>

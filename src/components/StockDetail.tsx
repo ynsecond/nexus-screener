@@ -31,7 +31,7 @@ export function StockDetail({ result: r }: Props) {
       {/* スコア内訳 */}
       <div>
         <h4 className="text-xs text-gray-500 mb-2">二次スコア内訳 ({r.score.total}/10)</h4>
-        <div className="grid grid-cols-5 gap-2">
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
           {scoreLabels.map((label, i) => (
             <div key={label} className="text-center">
               <div
@@ -81,7 +81,7 @@ export function StockDetail({ result: r }: Props) {
       {/* エントリー基準 */}
       <div className="bg-gray-800 rounded p-3">
         <h4 className="text-xs text-gray-500 mb-1">エントリー基準（参考）</h4>
-        <div className="grid grid-cols-2 gap-2 text-xs text-gray-400">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-400">
           <div>エントリーゾーン: 箱下限〜25日MA付近</div>
           <div>分割買い: 最大3〜4分割、初回20〜30%</div>
           <div>最大ホールド: 15営業日</div>
