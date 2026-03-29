@@ -1,0 +1,20 @@
+export function Header() {
+  return (
+    <header className="bg-gray-900 text-white">
+      <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-bold tracking-tight">NEXUS スクリーナー</h1>
+          <span className="text-xs text-gray-400 bg-gray-800 px-2 py-0.5 rounded">v3.2.1</span>
+        </div>
+        <div className="text-xs text-gray-400">買い集め検出</div>
+      </div>
+      <div className="bg-yellow-900/50 border-t border-yellow-700/50">
+        <div className="max-w-7xl mx-auto px-4 py-1.5">
+          <p className="text-xs text-yellow-200/80">
+            本ツールは投資助言ではありません。スクリーニング結果は参考情報であり、最終的な売買判断・責任は利用者ご自身に帰属します。
+          </p>
+        </div>
+      </div>
+    </header>
+  );
+}
