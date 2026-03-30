@@ -10,38 +10,63 @@ class JQuantsApiError extends Error {
   }
 }
 
-/** グローバル同時リクエスト制限（API過負荷防止） */
-class RequestLimiter {
+/**
+ * トークンバケット型レートリミッター
+ * J-Quants Standard: 120件/分 = 2件/秒
+ * 少し余裕を持たせて1.8件/秒（333ms間隔×2並列）で制御
+ */
+class RateLimiter {
   private queue: (() => void)[] = [];
-  private active = 0;
+  private tokens: number;
+  private maxTokens: number;
+  private intervalMs: number;
+  private timer: ReturnType<typeof setInterval> | null = null;
 
-  private maxConcurrent: number;
-  constructor(maxConcurrent: number) {
-    this.maxConcurrent = maxConcurrent;
+  constructor(requestsPerMinute: number) {
+    // 同時2リクエスト、トークン補充で流量制御
+    this.maxTokens = 2;
+    this.tokens = 2;
+    this.intervalMs = Math.ceil(60000 / requestsPerMinute);
+  }
+
+  private startRefill() {
+    if (this.timer) return;
+    this.timer = setInterval(() => {
+      if (this.tokens < this.maxTokens) {
+        this.tokens++;
+        const next = this.queue.shift();
+        if (next) {
+          this.tokens--;
+          next();
+        }
+      }
+      // キューもトークンも空なら停止
+      if (this.queue.length === 0 && this.tokens >= this.maxTokens) {
+        clearInterval(this.timer!);
+        this.timer = null;
+      }
+    }, this.intervalMs);
   }
 
   acquire(): Promise<void> {
-    if (this.active < this.maxConcurrent) {
-      this.active++;
+    if (this.tokens > 0) {
+      this.tokens--;
+      this.startRefill();
       return Promise.resolve();
     }
+    this.startRefill();
     return new Promise((resolve) => {
-      this.queue.push(() => {
-        this.active++;
-        resolve();
-      });
+      this.queue.push(resolve);
     });
   }
 
   release(): void {
-    this.active--;
-    const next = this.queue.shift();
-    if (next) next();
+    // トークンバケット方式では release 不要（時間ベースで補充）
   }
 }
 
-// J-Quants Standard: 同時10リクエストに制限し429を予防
-const limiter = new RequestLimiter(10);
+// J-Quants Standard: 120件/分
+const limiter = new RateLimiter(110); // 少し余裕を持たせる
 
 async function fetchApi<T>(path: string, params?: Record<string, string>): Promise<T[]> {
   const workerUrl = getWorkerUrl();
