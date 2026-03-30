@@ -4,6 +4,7 @@ import { fetchDailyBars } from '../api/jquants';
 import { formatDate } from '../utils/date';
 import { CandlestickChart } from './CandlestickChart';
 
+
 export interface HistoryEntry {
   code: string;
   name: string;
@@ -74,24 +75,42 @@ type SortKey = 'date' | 'changePct' | 'name';
 function HistoryStockDetail({ entry }: { entry: HistoryEntry }) {
   const [bars, setBars] = useState<DailyBar[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadChart = useCallback(() => {
     setLoading(true);
+    setError(null);
     const now = new Date();
     const from = new Date(now);
     from.setFullYear(from.getFullYear() - 20);
     fetchDailyBars(entry.code, formatDate(from), formatDate(now))
-      .then((data) => { if (!cancelled) setBars(data); })
-      .catch(() => { if (!cancelled) setBars(null); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .then((data) => { setBars(data); })
+      .catch((err) => {
+        setBars(null);
+        setError(err?.message?.includes('429') ? 'レート制限中です。しばらく待ってからリトライしてください。' : 'チャートデータの取得に失敗しました。');
+      })
+      .finally(() => { setLoading(false); });
   }, [entry.code]);
+
+  useEffect(() => {
+    loadChart();
+  }, [loadChart]);
 
   return (
     <div className="bg-[#1e2435] border border-gray-600 rounded-lg p-4 space-y-4 mt-1">
       {loading && (
         <div className="text-center text-gray-400 text-sm py-4">チャート読み込み中...</div>
+      )}
+      {error && (
+        <div className="bg-red-900/20 border border-red-800 rounded p-3 flex items-center justify-between">
+          <span className="text-red-300 text-sm">{error}</span>
+          <button
+            onClick={loadChart}
+            className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-1 rounded ml-3 shrink-0"
+          >
+            リトライ
+          </button>
+        </div>
       )}
       {bars && bars.length > 0 && (
         <CandlestickChart bars={bars} boxUpper={entry.boxUpper} boxLower={entry.boxLower} />
