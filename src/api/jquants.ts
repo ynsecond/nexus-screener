@@ -10,6 +10,8 @@ class JQuantsApiError extends Error {
   }
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function fetchApi<T>(path: string, params?: Record<string, string>): Promise<T[]> {
   const workerUrl = getWorkerUrl();
   const apiKey = getApiKey();
@@ -21,18 +23,31 @@ async function fetchApi<T>(path: string, params?: Record<string, string>): Promi
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   }
 
-  const resp = await fetch(url.toString(), {
-    headers: { 'X-API-KEY': apiKey },
-    cache: 'no-store',
-  });
+  const maxRetries = 3;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const resp = await fetch(url.toString(), {
+      headers: { 'X-API-KEY': apiKey },
+      cache: 'no-store',
+    });
 
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new JQuantsApiError(resp.status, `API error ${resp.status}: ${text}`);
+    if (resp.status === 429) {
+      if (attempt < maxRetries) {
+        const wait = Math.pow(2, attempt + 1) * 1000; // 2s, 4s, 8s
+        await sleep(wait);
+        continue;
+      }
+    }
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new JQuantsApiError(resp.status, `API error ${resp.status}: ${text}`);
+    }
+
+    const json = await resp.json() as { data: T[] };
+    return json.data;
   }
 
-  const json = await resp.json() as { data: T[] };
-  return json.data;
+  throw new JQuantsApiError(429, 'API rate limit exceeded after retries');
 }
 
 /** Step 1: 全上場銘柄一覧を取得 */
