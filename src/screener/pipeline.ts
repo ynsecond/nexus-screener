@@ -67,8 +67,8 @@ export async function runScreener(
   });
 
   // --- Step 3〜8: 各銘柄を処理 ---
-  const batchSize = 3; // レート制限対策: 並列数を抑制
-  const batchDelay = 500; // バッチ間ディレイ(ms)
+  const batchSize = 8; // スタンダードプラン向け並列数
+  const batchDelay = 200; // バッチ間ディレイ(ms)
   let processed = 0;
 
   for (let i = 0; i < candidates.length; i += batchSize) {
