@@ -16,7 +16,7 @@ class JQuantsApiError extends Error {
  * Workerページネーション考慮で実効80件/分（750ms間隔）に制限
  */
 let lastRequestTime = 0;
-const MIN_INTERVAL_MS = 750;
+const MIN_INTERVAL_MS = 500; // Worker側が750ms間隔で制御するため、クライアント側は500msで十分
 const requestQueue: { fn: () => Promise<unknown>; resolve: (v: unknown) => void; reject: (e: unknown) => void }[] = [];
 let processing = false;
 

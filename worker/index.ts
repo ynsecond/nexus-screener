@@ -1,6 +1,7 @@
 /**
  * Cloudflare Worker: J-Quants APIプロキシ
  * フロントエンドからのリクエストをJ-Quants APIに転送する
+ * レート制限: J-Quants Standard 120件/分を超えないよう制御
  */
 
 const JQUANTS_BASE = 'https://api.jquants.com/v2';
@@ -10,6 +11,24 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, X-API-KEY',
 };
+
+// グローバルレートリミッター: 最後のJ-Quantsリクエスト時刻を記録
+// 120件/分 = 500ms間隔が上限、余裕を持って750ms間隔
+let lastJQuantsCall = 0;
+const MIN_CALL_INTERVAL = 750;
+
+async function rateLimitedFetch(url: string, apiKey: string): Promise<Response> {
+  const now = Date.now();
+  const wait = MIN_CALL_INTERVAL - (now - lastJQuantsCall);
+  if (wait > 0) {
+    await new Promise((r) => setTimeout(r, wait));
+  }
+  lastJQuantsCall = Date.now();
+
+  return fetch(url, {
+    headers: { 'X-API-KEY': apiKey },
+  });
+}
 
 interface Env {}
 
@@ -52,9 +71,7 @@ export default {
       let nextUrl: string | null = jquantsUrl.toString();
 
       while (nextUrl) {
-        const resp = await fetch(nextUrl, {
-          headers: { 'X-API-KEY': apiKey },
-        });
+        const resp = await rateLimitedFetch(nextUrl, apiKey);
 
         if (!resp.ok) {
           const text = await resp.text();
