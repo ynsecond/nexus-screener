@@ -41,12 +41,12 @@ export function ResultTable({ results }: Props) {
       '前夜': 'bg-yellow-800 text-yellow-200',
       '点火済み': 'bg-red-800 text-red-200',
     };
-    return colors[phase] || 'bg-gray-800';
+    return colors[phase] || 'bg-[#232a3b]';
   };
 
   if (results.length === 0) {
     return (
-      <div className="bg-gray-800 rounded-lg p-8 text-center text-gray-400">
+      <div className="bg-[#232a3b] rounded-lg p-8 text-center text-gray-400">
         スクリーニング結果がありません
       </div>
     );
@@ -64,7 +64,7 @@ export function ResultTable({ results }: Props) {
               className={`text-xs px-2 py-1 rounded ${
                 sortKey === key
                   ? 'bg-blue-600 text-white'
-                  : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                  : 'bg-[#2d3548] text-gray-400 hover:bg-gray-600'
               }`}
             >
               {key === 'score' ? 'スコア順' : key === 'shelf' ? '棚順' : '型順'}
@@ -93,9 +93,9 @@ export function ResultTable({ results }: Props) {
             onClick={() =>
               setExpandedCode(expandedCode === r.code ? null : r.code)
             }
-            className={`hidden md:grid grid-cols-12 gap-2 px-3 py-2.5 rounded-lg cursor-pointer hover:bg-gray-700/50 transition-colors border border-transparent ${scoreColor(
+            className={`hidden md:grid grid-cols-12 gap-2 px-3 py-2.5 rounded-lg cursor-pointer hover:bg-[#2d3548]/50 transition-colors border border-transparent ${scoreColor(
               r.score.total,
-            )} ${expandedCode === r.code ? 'bg-gray-800' : 'bg-gray-800/50'}`}
+            )} ${expandedCode === r.code ? 'bg-[#232a3b]' : 'bg-[#232a3b]/50'}`}
           >
             {/* 銘柄 */}
             <div className="col-span-3">
@@ -144,7 +144,7 @@ export function ResultTable({ results }: Props) {
                         ? 'bg-green-700 text-green-200'
                         : s === 1
                           ? 'bg-yellow-700 text-yellow-200'
-                          : 'bg-gray-700 text-gray-500'
+                          : 'bg-[#2d3548] text-gray-500'
                     }`}
                   >
                     {s}
@@ -183,9 +183,9 @@ export function ResultTable({ results }: Props) {
             onClick={() =>
               setExpandedCode(expandedCode === r.code ? null : r.code)
             }
-            className={`md:hidden rounded-lg cursor-pointer hover:bg-gray-700/50 transition-colors border border-transparent px-3 py-3 space-y-2 ${scoreColor(
+            className={`md:hidden rounded-lg cursor-pointer hover:bg-[#2d3548]/50 transition-colors border border-transparent px-3 py-3 space-y-2 ${scoreColor(
               r.score.total,
-            )} ${expandedCode === r.code ? 'bg-gray-800' : 'bg-gray-800/50'}`}
+            )} ${expandedCode === r.code ? 'bg-[#232a3b]' : 'bg-[#232a3b]/50'}`}
           >
             {/* 1行目: コード・名前 + スコア */}
             <div className="flex items-center justify-between">

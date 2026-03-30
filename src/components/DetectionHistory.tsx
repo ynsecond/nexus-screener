@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { ScreenerResult } from '../types';
+import type { ScreenerResult, DailyBar } from '../types';
 import { fetchDailyBars } from '../api/jquants';
 import { formatDate } from '../utils/date';
+import { CandlestickChart } from './CandlestickChart';
 
 export interface HistoryEntry {
   code: string;
@@ -69,12 +70,77 @@ export function addToHistory(results: ScreenerResult[], bars: Map<string, number
 
 type SortKey = 'date' | 'changePct' | 'name';
 
+/** 履歴エントリ展開時のチャート表示 */
+function HistoryStockDetail({ entry }: { entry: HistoryEntry }) {
+  const [bars, setBars] = useState<DailyBar[] | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    const now = new Date();
+    const from = new Date(now);
+    from.setFullYear(from.getFullYear() - 20);
+    fetchDailyBars(entry.code, formatDate(from), formatDate(now))
+      .then((data) => { if (!cancelled) setBars(data); })
+      .catch(() => { if (!cancelled) setBars(null); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [entry.code]);
+
+  return (
+    <div className="bg-[#1e2435] border border-gray-600 rounded-lg p-4 space-y-4 mt-1">
+      {loading && (
+        <div className="text-center text-gray-400 text-sm py-4">チャート読み込み中...</div>
+      )}
+      {bars && bars.length > 0 && (
+        <CandlestickChart bars={bars} boxUpper={entry.boxUpper} boxLower={entry.boxLower} />
+      )}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div>
+          <div className="text-[10px] text-gray-400">銘柄コード</div>
+          <div className="text-sm text-gray-100 font-medium">{entry.code.slice(0, 4)}</div>
+        </div>
+        <div>
+          <div className="text-[10px] text-gray-400">市場</div>
+          <div className="text-sm text-gray-100 font-medium">{entry.market}</div>
+        </div>
+        <div>
+          <div className="text-[10px] text-gray-400">棚 / 型</div>
+          <div className="text-sm text-gray-100 font-medium">{entry.shelf} / {entry.patternType}</div>
+        </div>
+        <div>
+          <div className="text-[10px] text-gray-400">フェーズ</div>
+          <div className="text-sm text-gray-100 font-medium">{entry.phase}</div>
+        </div>
+        <div>
+          <div className="text-[10px] text-gray-400">箱上限</div>
+          <div className="text-sm text-gray-100 font-medium">{entry.boxUpper > 0 ? `¥${entry.boxUpper.toLocaleString()}` : '-'}</div>
+        </div>
+        <div>
+          <div className="text-[10px] text-gray-400">箱下限</div>
+          <div className="text-sm text-gray-100 font-medium">{entry.boxLower > 0 ? `¥${entry.boxLower.toLocaleString()}` : '-'}</div>
+        </div>
+        <div>
+          <div className="text-[10px] text-gray-400">検出日</div>
+          <div className="text-sm text-gray-100 font-medium">{entry.detectedDate}</div>
+        </div>
+        <div>
+          <div className="text-[10px] text-gray-400">スコア</div>
+          <div className="text-sm text-gray-100 font-medium">{entry.score}/10</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function DetectionHistory() {
   const [entries, setEntries] = useState<HistoryEntry[]>(loadHistory());
   const [sortKey, setSortKey] = useState<SortKey>('date');
   const [sortAsc, setSortAsc] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [updating, setUpdating] = useState(false);
+  const [expandedCode, setExpandedCode] = useState<string | null>(null);
 
   useEffect(() => {
     setEntries(loadHistory());
@@ -148,10 +214,14 @@ export function DetectionHistory() {
   };
 
   const changePctColor = (pct: number | null) => {
-    if (pct === null) return 'text-gray-500';
-    if (pct > 0) return 'text-green-400';
+    if (pct === null) return 'text-gray-400';
+    if (pct > 0) return 'text-emerald-400';
     if (pct < 0) return 'text-red-400';
-    return 'text-gray-400';
+    return 'text-gray-300';
+  };
+
+  const toggleExpand = (code: string) => {
+    setExpandedCode(expandedCode === code ? null : code);
   };
 
   return (
@@ -159,7 +229,7 @@ export function DetectionHistory() {
       {/* コントロール */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
         <h2 className="text-lg font-bold text-white">検出履歴</h2>
-        <span className="text-sm text-gray-400">{entries.length}銘柄</span>
+        <span className="text-sm text-gray-300">{entries.length}銘柄</span>
         <div className="flex gap-2 sm:ml-auto flex-wrap">
           <button
             onClick={updatePrices}
@@ -180,26 +250,26 @@ export function DetectionHistory() {
       </div>
 
       {entries.length === 0 ? (
-        <div className="bg-gray-800 rounded-lg p-8 text-center text-gray-400">
+        <div className="bg-[#232a3b] rounded-lg p-8 text-center text-gray-400">
           検出履歴がありません。スクリーニングを実行すると自動的に記録されます。
         </div>
       ) : (
         <>
           {/* ソートボタン */}
           <div className="flex gap-1 items-center">
-            <span className="text-xs text-gray-500 mr-1">ソート:</span>
+            <span className="text-xs text-gray-400 mr-1">ソート:</span>
             {([['date', '検出日'], ['changePct', '騰落率'], ['name', '銘柄名']] as [SortKey, string][]).map(([key, label]) => (
               <button
                 key={key}
                 onClick={() => handleSort(key)}
-                className={`text-xs px-2 py-1 rounded ${sortKey === key ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}
+                className={`text-xs px-2 py-1 rounded ${sortKey === key ? 'bg-blue-600 text-white' : 'bg-[#2d3548] text-gray-300 hover:bg-[#3a4560]'}`}
               >
                 {label} {sortKey === key ? (sortAsc ? '↑' : '↓') : ''}
               </button>
             ))}
             <button
               onClick={toggleSelectAll}
-              className="text-xs px-2 py-1 rounded bg-gray-700 text-gray-400 hover:bg-gray-600 ml-auto"
+              className="text-xs px-2 py-1 rounded bg-[#2d3548] text-gray-300 hover:bg-[#3a4560] ml-auto"
             >
               {selected.size === entries.length ? '全解除' : '全選択'}
             </button>
@@ -209,7 +279,7 @@ export function DetectionHistory() {
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-gray-500 border-b border-gray-700">
+                <tr className="text-left text-gray-400 border-b border-gray-600">
                   <th className="py-2 px-2 w-8"></th>
                   <th className="py-2 px-2">銘柄</th>
                   <th className="py-2 px-2">検出日</th>
@@ -224,44 +294,54 @@ export function DetectionHistory() {
               </thead>
               <tbody>
                 {sorted.map((e) => (
-                  <tr key={e.code} className="border-b border-gray-800 hover:bg-gray-800/50">
-                    <td className="py-2 px-2">
-                      <input
-                        type="checkbox"
-                        checked={selected.has(e.code)}
-                        onChange={() => toggleSelect(e.code)}
-                        className="rounded"
-                      />
-                    </td>
-                    <td className="py-2 px-2">
-                      <div className="text-gray-200">{e.code.slice(0, 4)} {e.name}</div>
-                      <div className="text-xs text-gray-500">{e.market}</div>
-                    </td>
-                    <td className="py-2 px-2 text-gray-300 font-mono text-xs">{e.detectedDate}</td>
-                    <td className="py-2 px-2">
-                      <span className="text-xs text-gray-300">{e.shelf} / {e.patternType}</span>
-                    </td>
-                    <td className="py-2 px-2 text-gray-300">{e.score}/10</td>
-                    <td className="py-2 px-2 text-gray-300 font-mono">
-                      {e.detectedPrice > 0 ? `¥${e.detectedPrice.toLocaleString()}` : '-'}
-                    </td>
-                    <td className="py-2 px-2 text-gray-300 font-mono">
-                      {e.currentPrice ? `¥${e.currentPrice.toLocaleString()}` : '-'}
-                    </td>
-                    <td className={`py-2 px-2 font-mono ${changePctColor(e.priceChange)}`}>
-                      {e.priceChange !== null ? `${e.priceChange > 0 ? '+' : ''}${e.priceChange.toLocaleString()}` : '-'}
-                    </td>
-                    <td className={`py-2 px-2 font-mono font-bold ${changePctColor(e.priceChangePct)}`}>
-                      {e.priceChangePct !== null ? `${e.priceChangePct > 0 ? '+' : ''}${e.priceChangePct.toFixed(2)}%` : '-'}
-                    </td>
-                    <td className="py-2 px-2">
-                      <button
-                        onClick={() => deleteOne(e.code)}
-                        className="text-gray-500 hover:text-red-400 text-xs"
-                        title="削除"
+                  <tr key={e.code} className="group">
+                    <td colSpan={10} className="p-0">
+                      <div
+                        onClick={() => toggleExpand(e.code)}
+                        className={`grid grid-cols-[2rem_1fr_6rem_5rem_4rem_6rem_6rem_5rem_5.5rem_2rem] gap-0 items-center cursor-pointer hover:bg-[#2a3145] transition-colors border-b border-gray-700/50 ${
+                          expandedCode === e.code ? 'bg-[#232a3b]' : ''
+                        }`}
                       >
-                        x
-                      </button>
+                        <div className="py-2 px-2" onClick={(ev) => ev.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selected.has(e.code)}
+                            onChange={() => toggleSelect(e.code)}
+                            className="rounded"
+                          />
+                        </div>
+                        <div className="py-2 px-2">
+                          <div className="text-gray-100">{e.code.slice(0, 4)} {e.name}</div>
+                          <div className="text-xs text-gray-400">{e.market}</div>
+                        </div>
+                        <div className="py-2 px-2 text-gray-200 font-mono text-xs">{e.detectedDate}</div>
+                        <div className="py-2 px-2">
+                          <span className="text-xs text-gray-200">{e.shelf} / {e.patternType}</span>
+                        </div>
+                        <div className="py-2 px-2 text-gray-200">{e.score}/10</div>
+                        <div className="py-2 px-2 text-gray-200 font-mono">
+                          {e.detectedPrice > 0 ? `¥${e.detectedPrice.toLocaleString()}` : '-'}
+                        </div>
+                        <div className="py-2 px-2 text-gray-200 font-mono">
+                          {e.currentPrice ? `¥${e.currentPrice.toLocaleString()}` : '-'}
+                        </div>
+                        <div className={`py-2 px-2 font-mono ${changePctColor(e.priceChange)}`}>
+                          {e.priceChange !== null ? `${e.priceChange > 0 ? '+' : ''}${e.priceChange.toLocaleString()}` : '-'}
+                        </div>
+                        <div className={`py-2 px-2 font-mono font-bold ${changePctColor(e.priceChangePct)}`}>
+                          {e.priceChangePct !== null ? `${e.priceChangePct > 0 ? '+' : ''}${e.priceChangePct.toFixed(2)}%` : '-'}
+                        </div>
+                        <div className="py-2 px-2" onClick={(ev) => ev.stopPropagation()}>
+                          <button
+                            onClick={() => deleteOne(e.code)}
+                            className="text-gray-400 hover:text-red-400 text-xs"
+                            title="削除"
+                          >
+                            x
+                          </button>
+                        </div>
+                      </div>
+                      {expandedCode === e.code && <HistoryStockDetail entry={e} />}
                     </td>
                   </tr>
                 ))}
@@ -272,36 +352,49 @@ export function DetectionHistory() {
           {/* カード (モバイル) */}
           <div className="md:hidden space-y-2">
             {sorted.map((e) => (
-              <div key={e.code} className="bg-gray-800/50 rounded-lg p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <input
-                      type="checkbox"
-                      checked={selected.has(e.code)}
-                      onChange={() => toggleSelect(e.code)}
-                      className="rounded shrink-0"
-                    />
-                    <div className="min-w-0">
-                      <span className="text-sm text-white truncate block">{e.code.slice(0, 4)} {e.name}</span>
-                      <span className="text-xs text-gray-500">{e.detectedDate} | {e.shelf}/{e.patternType}</span>
+              <div key={e.code}>
+                <div
+                  onClick={() => toggleExpand(e.code)}
+                  className={`rounded-lg cursor-pointer hover:bg-[#2a3145] transition-colors p-3 space-y-2 ${
+                    expandedCode === e.code ? 'bg-[#232a3b]' : 'bg-[#232a3b]/50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(e.code)}
+                        onChange={() => toggleSelect(e.code)}
+                        onClick={(ev) => ev.stopPropagation()}
+                        className="rounded shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <span className="text-sm text-white truncate block">{e.code.slice(0, 4)} {e.name}</span>
+                        <span className="text-xs text-gray-400">{e.detectedDate} | {e.shelf}/{e.patternType}</span>
+                      </div>
                     </div>
+                    <button
+                      onClick={(ev) => { ev.stopPropagation(); deleteOne(e.code); }}
+                      className="text-gray-400 hover:text-red-400 text-xs shrink-0 ml-2"
+                    >
+                      x
+                    </button>
                   </div>
-                  <button
-                    onClick={() => deleteOne(e.code)}
-                    className="text-gray-500 hover:text-red-400 text-xs shrink-0 ml-2"
-                  >
-                    x
-                  </button>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-300">
+                      検出時 ¥{e.detectedPrice > 0 ? e.detectedPrice.toLocaleString() : '-'}
+                      {e.currentPrice ? ` → ¥${e.currentPrice.toLocaleString()}` : ''}
+                    </span>
+                    <span className={`font-mono font-bold ${changePctColor(e.priceChangePct)}`}>
+                      {e.priceChangePct !== null ? `${e.priceChangePct > 0 ? '+' : ''}${e.priceChangePct.toFixed(2)}%` : '-'}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-400">
-                    検出時 ¥{e.detectedPrice > 0 ? e.detectedPrice.toLocaleString() : '-'}
-                    {e.currentPrice ? ` → ¥${e.currentPrice.toLocaleString()}` : ''}
-                  </span>
-                  <span className={`font-mono font-bold ${changePctColor(e.priceChangePct)}`}>
-                    {e.priceChangePct !== null ? `${e.priceChangePct > 0 ? '+' : ''}${e.priceChangePct.toFixed(2)}%` : '-'}
-                  </span>
-                </div>
+                {expandedCode === e.code && (
+                  <div className="px-1 pb-2">
+                    <HistoryStockDetail entry={e} />
+                  </div>
+                )}
               </div>
             ))}
           </div>

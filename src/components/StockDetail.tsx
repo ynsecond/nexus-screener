@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { ScreenerResult, DailyBar } from '../types';
 import { fetchDailyBars } from '../api/jquants';
-import { formatDate, subtractBusinessDays } from '../utils/date';
+import { formatDate } from '../utils/date';
 import { CandlestickChart } from './CandlestickChart';
 
 interface Props {
@@ -16,7 +16,9 @@ export function StockDetail({ result: r }: Props) {
     let cancelled = false;
     setLoading(true);
     const now = new Date();
-    const from = subtractBusinessDays(now, 90);
+    // 20年分のデータを取得
+    const from = new Date(now);
+    from.setFullYear(from.getFullYear() - 20);
     fetchDailyBars(r.code, formatDate(from), formatDate(now))
       .then((data) => { if (!cancelled) setBars(data); })
       .catch(() => { if (!cancelled) setBars(null); })
@@ -34,7 +36,7 @@ export function StockDetail({ result: r }: Props) {
   ];
 
   return (
-    <div className="bg-gray-850 border border-gray-700 rounded-lg mx-3 mb-2 p-4 space-y-4">
+    <div className="bg-[#1e2435] border border-gray-600 rounded-lg mx-3 mb-2 p-4 space-y-4">
       {/* チャート */}
       {loading && (
         <div className="text-center text-gray-500 text-sm py-4">チャート読み込み中...</div>
@@ -106,7 +108,7 @@ export function StockDetail({ result: r }: Props) {
       </div>
 
       {/* エントリー基準 */}
-      <div className="bg-gray-800 rounded p-3">
+      <div className="bg-[#232a3b] rounded p-3">
         <h4 className="text-xs text-gray-500 mb-1">エントリー基準（参考）</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-400">
           <div>エントリーゾーン: 箱下限〜25日MA付近</div>

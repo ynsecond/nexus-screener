@@ -74,14 +74,14 @@ export function ScreenerDashboard() {
 
         <button
           onClick={() => setShowExclusion(true)}
-          className="w-full sm:w-auto bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg px-4 py-2.5 text-sm transition-colors"
+          className="w-full sm:w-auto bg-[#2d3548] hover:bg-gray-600 text-gray-300 rounded-lg px-4 py-2.5 text-sm transition-colors"
         >
           除外リスト管理
         </button>
 
         <button
           onClick={() => setShowBacktest(!showBacktest)}
-          className="w-full sm:w-auto bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg px-4 py-2.5 text-sm transition-colors"
+          className="w-full sm:w-auto bg-[#2d3548] hover:bg-gray-600 text-gray-300 rounded-lg px-4 py-2.5 text-sm transition-colors"
         >
           {showBacktest ? 'バックテスト閉じる' : 'Recall検証'}
         </button>

@@ -16,17 +16,17 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100">
+    <div className="min-h-screen bg-[#1a1f2e] text-gray-100">
       <Header />
       {/* タブナビゲーション */}
       <div className="max-w-7xl mx-auto px-4 pt-4">
-        <div className="flex gap-1 border-b border-gray-800">
+        <div className="flex gap-1 border-b border-gray-600">
           <button
             onClick={() => setPage('screener')}
             className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
               page === 'screener'
-                ? 'bg-gray-800 text-white border-b-2 border-blue-500'
-                : 'text-gray-400 hover:text-gray-200'
+                ? 'bg-[#232a3b] text-white border-b-2 border-blue-400'
+                : 'text-gray-400 hover:text-white'
             }`}
           >
             スクリーニング
@@ -35,20 +35,22 @@ function App() {
             onClick={() => setPage('history')}
             className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
               page === 'history'
-                ? 'bg-gray-800 text-white border-b-2 border-blue-500'
-                : 'text-gray-400 hover:text-gray-200'
+                ? 'bg-[#232a3b] text-white border-b-2 border-blue-400'
+                : 'text-gray-400 hover:text-white'
             }`}
           >
             検出履歴
           </button>
         </div>
       </div>
-      {page === 'screener' && <ScreenerDashboard />}
-      {page === 'history' && (
+      <div style={{ display: page === 'screener' ? 'block' : 'none' }}>
+        <ScreenerDashboard />
+      </div>
+      <div style={{ display: page === 'history' ? 'block' : 'none' }}>
         <div className="max-w-7xl mx-auto px-4 py-6">
           <DetectionHistory />
         </div>
-      )}
+      </div>
     </div>
   );
 }
