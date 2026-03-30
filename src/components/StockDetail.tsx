@@ -13,19 +13,35 @@ export function StockDetail({ result: r }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadChart = useCallback(() => {
+  const loadChart = useCallback(async () => {
     setLoading(true);
     setError(null);
     const now = new Date();
     const from = new Date(now);
     from.setFullYear(from.getFullYear() - 20);
-    fetchDailyBars(r.code, formatDate(from), formatDate(now))
-      .then((data) => { setBars(data); })
-      .catch((err) => {
+
+    // 429の場合は自動リトライ（3回まで、間隔を空けて）
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const data = await fetchDailyBars(r.code, formatDate(from), formatDate(now));
+        setBars(data);
+        setLoading(false);
+        return;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('429') && attempt < 2) {
+          setError(`レート制限のため待機中...（${attempt + 1}/3回目）`);
+          await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 5000));
+          continue;
+        }
         setBars(null);
-        setError(err?.message?.includes('429') ? 'レート制限中です。しばらく待ってからリトライしてください。' : 'チャートデータの取得に失敗しました。');
-      })
-      .finally(() => { setLoading(false); });
+        setError(msg.includes('429')
+          ? 'レート制限中です。しばらく待ってからリトライしてください。'
+          : 'チャートデータの取得に失敗しました。');
+        setLoading(false);
+        return;
+      }
+    }
   }, [r.code]);
 
   useEffect(() => {
