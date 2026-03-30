@@ -11,54 +11,50 @@ class JQuantsApiError extends Error {
 }
 
 /**
- * シリアルキュー型レートリミッター
+ * レートリミッター: 最後のリクエストからの経過時間を見て待機
  * J-Quants Standard: 120件/分
- * Workerのページネーションで実リクエストが増えるため、クライアント側60件/分に制限
+ * Workerページネーション考慮で実効80件/分（750ms間隔）に制限
  */
-class SerialQueue {
-  private queue: { execute: () => Promise<unknown>; resolve: (v: unknown) => void; reject: (e: unknown) => void }[] = [];
-  private running = false;
-  private intervalMs: number;
+let lastRequestTime = 0;
+const MIN_INTERVAL_MS = 750;
+const requestQueue: { fn: () => Promise<unknown>; resolve: (v: unknown) => void; reject: (e: unknown) => void }[] = [];
+let processing = false;
 
-  constructor(requestsPerMinute: number) {
-    this.intervalMs = Math.ceil(60000 / requestsPerMinute);
-  }
+async function processQueue() {
+  if (processing) return;
+  processing = true;
 
-  enqueue<T>(fn: () => Promise<T>): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      this.queue.push({
-        execute: fn as () => Promise<unknown>,
-        resolve: resolve as (v: unknown) => void,
-        reject,
-      });
-      this.process();
-    });
-  }
-
-  private async process() {
-    if (this.running) return;
-    this.running = true;
-
-    while (this.queue.length > 0) {
-      const item = this.queue.shift()!;
-      try {
-        const result = await item.execute();
-        item.resolve(result);
-      } catch (err) {
-        item.reject(err);
-      }
-      // 次のリクエストまで待機
-      if (this.queue.length > 0) {
-        await new Promise((r) => setTimeout(r, this.intervalMs));
-      }
+  while (requestQueue.length > 0) {
+    // 前回リクエストからの最小間隔を確保
+    const now = Date.now();
+    const wait = MIN_INTERVAL_MS - (now - lastRequestTime);
+    if (wait > 0) {
+      await new Promise((r) => setTimeout(r, wait));
     }
 
-    this.running = false;
+    const item = requestQueue.shift()!;
+    lastRequestTime = Date.now();
+    try {
+      const result = await item.fn();
+      item.resolve(result);
+    } catch (err) {
+      item.reject(err);
+    }
   }
+
+  processing = false;
 }
 
-// 60件/分 = 1秒に1件（Workerページネーション考慮）
-const apiQueue = new SerialQueue(60);
+function enqueue<T>(fn: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    requestQueue.push({
+      fn: fn as () => Promise<unknown>,
+      resolve: resolve as (v: unknown) => void,
+      reject,
+    });
+    processQueue();
+  });
+}
 
 async function rawFetch<T>(url: string, apiKey: string): Promise<T[]> {
   const resp = await fetch(url, {
@@ -66,8 +62,8 @@ async function rawFetch<T>(url: string, apiKey: string): Promise<T[]> {
     cache: 'no-store',
   });
 
-  // 429の場合: 2秒待って1回リトライ
   if (resp.status === 429) {
+    // 1回だけ2秒待ってリトライ
     await new Promise((r) => setTimeout(r, 2000));
     const resp2 = await fetch(url, {
       headers: { 'X-API-KEY': apiKey },
@@ -99,7 +95,7 @@ function fetchApi<T>(path: string, params?: Record<string, string>): Promise<T[]
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   }
 
-  return apiQueue.enqueue(() => rawFetch<T>(url.toString(), apiKey));
+  return enqueue(() => rawFetch<T>(url.toString(), apiKey));
 }
 
 /** Step 1: 全上場銘柄一覧を取得 */
