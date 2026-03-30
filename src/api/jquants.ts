@@ -10,7 +10,38 @@ class JQuantsApiError extends Error {
   }
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** グローバル同時リクエスト制限（API過負荷防止） */
+class RequestLimiter {
+  private queue: (() => void)[] = [];
+  private active = 0;
+
+  private maxConcurrent: number;
+  constructor(maxConcurrent: number) {
+    this.maxConcurrent = maxConcurrent;
+  }
+
+  acquire(): Promise<void> {
+    if (this.active < this.maxConcurrent) {
+      this.active++;
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      this.queue.push(() => {
+        this.active++;
+        resolve();
+      });
+    });
+  }
+
+  release(): void {
+    this.active--;
+    const next = this.queue.shift();
+    if (next) next();
+  }
+}
+
+// J-Quants Standard: 同時6リクエストに制限し429を予防
+const limiter = new RequestLimiter(6);
 
 async function fetchApi<T>(path: string, params?: Record<string, string>): Promise<T[]> {
   const workerUrl = getWorkerUrl();
@@ -23,19 +54,26 @@ async function fetchApi<T>(path: string, params?: Record<string, string>): Promi
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   }
 
-  const maxRetries = 3;
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+  await limiter.acquire();
+  try {
     const resp = await fetch(url.toString(), {
       headers: { 'X-API-KEY': apiKey },
       cache: 'no-store',
     });
 
+    // 429の場合: 1回だけ短時間待ってリトライ
     if (resp.status === 429) {
-      if (attempt < maxRetries) {
-        const wait = Math.pow(2, attempt + 1) * 1000; // 2s, 4s, 8s
-        await sleep(wait);
-        continue;
+      await new Promise((r) => setTimeout(r, 1000));
+      const resp2 = await fetch(url.toString(), {
+        headers: { 'X-API-KEY': apiKey },
+        cache: 'no-store',
+      });
+      if (!resp2.ok) {
+        const text = await resp2.text();
+        throw new JQuantsApiError(resp2.status, `API error ${resp2.status}: ${text}`);
       }
+      const json = await resp2.json() as { data: T[] };
+      return json.data;
     }
 
     if (!resp.ok) {
@@ -45,9 +83,9 @@ async function fetchApi<T>(path: string, params?: Record<string, string>): Promi
 
     const json = await resp.json() as { data: T[] };
     return json.data;
+  } finally {
+    limiter.release();
   }
-
-  throw new JQuantsApiError(429, 'API rate limit exceeded after retries');
 }
 
 /** Step 1: 全上場銘柄一覧を取得 */
