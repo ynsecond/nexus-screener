@@ -66,36 +66,28 @@ export async function runScreener(
     currentCount: candidates.length, totalCount: stocks.length,
   });
 
-  // --- Step 3〜8: 各銘柄を処理 ---
-  const batchSize = 10; // 並列リクエスト数（429時はリトライで自動復帰）
+  // --- Step 3〜8: 全銘柄を並列処理（リミッターがAPI同時数を制御） ---
   let processed = 0;
 
-  for (let i = 0; i < candidates.length; i += batchSize) {
-    const batch = candidates.slice(i, i + batchSize);
-
-    const batchPromises = batch.map(async (stock) => {
-      try {
-        return await processStock(stock, fromStr, toStr, exclusionList);
-      } catch (err) {
-        console.warn(`[${stock.Code}] エラー:`, err);
-        return null;
-      }
-    });
-
-    const batchResults = await Promise.all(batchPromises);
-
-    for (const result of batchResults) {
+  const allPromises = candidates.map(async (stock) => {
+    try {
+      const result = await processStock(stock, fromStr, toStr, exclusionList);
       if (result) results.push(result);
+    } catch (err) {
+      console.warn(`[${stock.Code}] エラー:`, err);
+    } finally {
+      processed++;
+      if (processed % 50 === 0 || processed === candidates.length) {
+        onProgress({
+          step: 5, totalSteps: 8,
+          message: `スクリーニング中... (${processed}/${candidates.length})`,
+          currentCount: processed, totalCount: candidates.length,
+        });
+      }
     }
+  });
 
-    processed += batch.length;
-    onProgress({
-      step: 5, totalSteps: 8,
-      message: `スクリーニング中... (${processed}/${candidates.length})`,
-      currentCount: processed, totalCount: candidates.length,
-    });
-
-  }
+  await Promise.all(allPromises);
 
   // --- ソート ---
   const sorted = sortResults(results);

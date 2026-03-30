@@ -40,8 +40,8 @@ class RequestLimiter {
   }
 }
 
-// J-Quants Standard: 同時6リクエストに制限し429を予防
-const limiter = new RequestLimiter(6);
+// J-Quants Standard: 同時10リクエストに制限し429を予防
+const limiter = new RequestLimiter(10);
 
 async function fetchApi<T>(path: string, params?: Record<string, string>): Promise<T[]> {
   const workerUrl = getWorkerUrl();
