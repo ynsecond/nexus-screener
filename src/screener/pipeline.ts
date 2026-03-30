@@ -67,8 +67,7 @@ export async function runScreener(
   });
 
   // --- Step 3〜8: 各銘柄を処理 ---
-  const batchSize = 8; // スタンダードプラン向け並列数
-  const batchDelay = 200; // バッチ間ディレイ(ms)
+  const batchSize = 10; // 並列リクエスト数（429時はリトライで自動復帰）
   let processed = 0;
 
   for (let i = 0; i < candidates.length; i += batchSize) {
@@ -96,10 +95,6 @@ export async function runScreener(
       currentCount: processed, totalCount: candidates.length,
     });
 
-    // レート制限回避のためバッチ間にディレイ
-    if (i + batchSize < candidates.length) {
-      await new Promise((r) => setTimeout(r, batchDelay));
-    }
   }
 
   // --- ソート ---
