@@ -11,106 +11,95 @@ class JQuantsApiError extends Error {
 }
 
 /**
- * トークンバケット型レートリミッター
- * J-Quants Standard: 120件/分 = 2件/秒
- * 少し余裕を持たせて1.8件/秒（333ms間隔×2並列）で制御
+ * シリアルキュー型レートリミッター
+ * J-Quants Standard: 120件/分
+ * Workerのページネーションで実リクエストが増えるため、クライアント側60件/分に制限
  */
-class RateLimiter {
-  private queue: (() => void)[] = [];
-  private tokens: number;
-  private maxTokens: number;
+class SerialQueue {
+  private queue: { execute: () => Promise<unknown>; resolve: (v: unknown) => void; reject: (e: unknown) => void }[] = [];
+  private running = false;
   private intervalMs: number;
-  private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(requestsPerMinute: number) {
-    // 同時2リクエスト、トークン補充で流量制御
-    this.maxTokens = 2;
-    this.tokens = 2;
     this.intervalMs = Math.ceil(60000 / requestsPerMinute);
   }
 
-  private startRefill() {
-    if (this.timer) return;
-    this.timer = setInterval(() => {
-      if (this.tokens < this.maxTokens) {
-        this.tokens++;
-        const next = this.queue.shift();
-        if (next) {
-          this.tokens--;
-          next();
-        }
-      }
-      // キューもトークンも空なら停止
-      if (this.queue.length === 0 && this.tokens >= this.maxTokens) {
-        clearInterval(this.timer!);
-        this.timer = null;
-      }
-    }, this.intervalMs);
-  }
-
-  acquire(): Promise<void> {
-    if (this.tokens > 0) {
-      this.tokens--;
-      this.startRefill();
-      return Promise.resolve();
-    }
-    this.startRefill();
-    return new Promise((resolve) => {
-      this.queue.push(resolve);
+  enqueue<T>(fn: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      this.queue.push({
+        execute: fn as () => Promise<unknown>,
+        resolve: resolve as (v: unknown) => void,
+        reject,
+      });
+      this.process();
     });
   }
 
-  release(): void {
-    // トークンバケット方式では release 不要（時間ベースで補充）
+  private async process() {
+    if (this.running) return;
+    this.running = true;
+
+    while (this.queue.length > 0) {
+      const item = this.queue.shift()!;
+      try {
+        const result = await item.execute();
+        item.resolve(result);
+      } catch (err) {
+        item.reject(err);
+      }
+      // 次のリクエストまで待機
+      if (this.queue.length > 0) {
+        await new Promise((r) => setTimeout(r, this.intervalMs));
+      }
+    }
+
+    this.running = false;
   }
 }
 
-// J-Quants Standard: 120件/分
-const limiter = new RateLimiter(110); // 少し余裕を持たせる
+// 60件/分 = 1秒に1件（Workerページネーション考慮）
+const apiQueue = new SerialQueue(60);
 
-async function fetchApi<T>(path: string, params?: Record<string, string>): Promise<T[]> {
+async function rawFetch<T>(url: string, apiKey: string): Promise<T[]> {
+  const resp = await fetch(url, {
+    headers: { 'X-API-KEY': apiKey },
+    cache: 'no-store',
+  });
+
+  // 429の場合: 2秒待って1回リトライ
+  if (resp.status === 429) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const resp2 = await fetch(url, {
+      headers: { 'X-API-KEY': apiKey },
+      cache: 'no-store',
+    });
+    if (!resp2.ok) {
+      const text = await resp2.text();
+      throw new JQuantsApiError(resp2.status, `API error ${resp2.status}: ${text}`);
+    }
+    return (await resp2.json() as { data: T[] }).data;
+  }
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new JQuantsApiError(resp.status, `API error ${resp.status}: ${text}`);
+  }
+
+  return (await resp.json() as { data: T[] }).data;
+}
+
+function fetchApi<T>(path: string, params?: Record<string, string>): Promise<T[]> {
   const workerUrl = getWorkerUrl();
   const apiKey = getApiKey();
-  if (!apiKey) throw new Error('APIキーが設定されていません');
-  if (!workerUrl) throw new Error('Worker URLが設定されていません');
+  if (!apiKey) return Promise.reject(new Error('APIキーが設定されていません'));
+  if (!workerUrl) return Promise.reject(new Error('Worker URLが設定されていません'));
 
   const url = new URL(workerUrl + path);
   if (params) {
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   }
 
-  await limiter.acquire();
-  try {
-    const resp = await fetch(url.toString(), {
-      headers: { 'X-API-KEY': apiKey },
-      cache: 'no-store',
-    });
-
-    // 429の場合: 1回だけ短時間待ってリトライ
-    if (resp.status === 429) {
-      await new Promise((r) => setTimeout(r, 1000));
-      const resp2 = await fetch(url.toString(), {
-        headers: { 'X-API-KEY': apiKey },
-        cache: 'no-store',
-      });
-      if (!resp2.ok) {
-        const text = await resp2.text();
-        throw new JQuantsApiError(resp2.status, `API error ${resp2.status}: ${text}`);
-      }
-      const json = await resp2.json() as { data: T[] };
-      return json.data;
-    }
-
-    if (!resp.ok) {
-      const text = await resp.text();
-      throw new JQuantsApiError(resp.status, `API error ${resp.status}: ${text}`);
-    }
-
-    const json = await resp.json() as { data: T[] };
-    return json.data;
-  } finally {
-    limiter.release();
-  }
+  return apiQueue.enqueue(() => rawFetch<T>(url.toString(), apiKey));
 }
 
 /** Step 1: 全上場銘柄一覧を取得 */

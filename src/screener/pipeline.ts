@@ -66,28 +66,26 @@ export async function runScreener(
     currentCount: candidates.length, totalCount: stocks.length,
   });
 
-  // --- Step 3〜8: 全銘柄を並列処理（リミッターがAPI同時数を制御） ---
+  // --- Step 3〜8: 各銘柄を順次処理（APIレート制限120件/分に対応） ---
   let processed = 0;
 
-  const allPromises = candidates.map(async (stock) => {
+  for (const stock of candidates) {
     try {
       const result = await processStock(stock, fromStr, toStr, exclusionList);
       if (result) results.push(result);
     } catch (err) {
       console.warn(`[${stock.Code}] エラー:`, err);
-    } finally {
-      processed++;
-      if (processed % 50 === 0 || processed === candidates.length) {
-        onProgress({
-          step: 5, totalSteps: 8,
-          message: `スクリーニング中... (${processed}/${candidates.length})`,
-          currentCount: processed, totalCount: candidates.length,
-        });
-      }
     }
-  });
 
-  await Promise.all(allPromises);
+    processed++;
+    if (processed % 20 === 0 || processed === candidates.length) {
+      onProgress({
+        step: 5, totalSteps: 8,
+        message: `スクリーニング中... (${processed}/${candidates.length})`,
+        currentCount: processed, totalCount: candidates.length,
+      });
+    }
+  }
 
   // --- ソート ---
   const sorted = sortResults(results);
