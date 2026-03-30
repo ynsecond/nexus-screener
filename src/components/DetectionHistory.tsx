@@ -84,7 +84,8 @@ function HistoryStockDetail({ entry }: { entry: HistoryEntry }) {
     const from = new Date(now);
     from.setFullYear(from.getFullYear() - 20);
 
-    for (let attempt = 0; attempt < 3; attempt++) {
+    const waits = [20000, 40000, 60000];
+    for (let attempt = 0; attempt <= waits.length; attempt++) {
       try {
         const data = await fetchDailyBars(entry.code, formatDate(from), formatDate(now));
         setBars(data);
@@ -92,14 +93,16 @@ function HistoryStockDetail({ entry }: { entry: HistoryEntry }) {
         return;
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes('429') && attempt < 2) {
-          setError(`レート制限のため待機中...（${attempt + 1}/3回目）`);
-          await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 5000));
+        if (msg.includes('429') && attempt < waits.length) {
+          const sec = waits[attempt] / 1000;
+          setError(`レート制限のため${sec}秒待機中...（${attempt + 1}/3回目）`);
+          await new Promise((resolve) => setTimeout(resolve, waits[attempt]));
+          setError(null);
           continue;
         }
         setBars(null);
         setError(msg.includes('429')
-          ? 'レート制限中です。しばらく待ってからリトライしてください。'
+          ? 'レート制限中です。1分ほど待ってからリトライしてください。'
           : 'チャートデータの取得に失敗しました。');
         setLoading(false);
         return;
