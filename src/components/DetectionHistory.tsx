@@ -82,7 +82,7 @@ function HistoryStockDetail({ entry }: { entry: HistoryEntry }) {
     setError(null);
     const now = new Date();
     const from = new Date(now);
-    from.setFullYear(from.getFullYear() - 20);
+    from.setFullYear(from.getFullYear() - 2);
 
     const waits = [20000, 40000, 60000];
     for (let attempt = 0; attempt <= waits.length; attempt++) {

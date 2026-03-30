@@ -18,7 +18,7 @@ export function StockDetail({ result: r }: Props) {
     setError(null);
     const now = new Date();
     const from = new Date(now);
-    from.setFullYear(from.getFullYear() - 20);
+    from.setFullYear(from.getFullYear() - 2);
 
     // 429の場合は自動リトライ（レート制限は1分枠なので長めに待つ）
     const waits = [20000, 40000, 60000];
