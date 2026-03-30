@@ -6,6 +6,7 @@ import { ProgressIndicator } from './ProgressIndicator';
 import { MarketFilter } from './MarketFilter';
 import { ExclusionManager, useExclusionList } from './ExclusionManager';
 import { BacktestPanel } from './BacktestPanel';
+import { addToHistory } from './DetectionHistory';
 
 export function ScreenerDashboard() {
   const [results, setResults] = useState<ScreenerResult[] | null>(null);
@@ -15,16 +16,17 @@ export function ScreenerDashboard() {
   const [marketCondition, setMarketCondition] = useState<MarketCondition | null>(null);
   const [showExclusion, setShowExclusion] = useState(false);
   const [showBacktest, setShowBacktest] = useState(false);
+  const [historyMsg, setHistoryMsg] = useState<string | null>(null);
   const { list: exclusionList, save: saveExclusionList } = useExclusionList();
 
   const handleRun = useCallback(async () => {
     setRunning(true);
     setError(null);
     setResults(null);
+    setHistoryMsg(null);
     setProgress({ step: 0, totalSteps: 8, message: '開始中...', currentCount: 0, totalCount: 0 });
 
     try {
-      // 地合い判定を並行実行
       const [screenerResults, condition] = await Promise.all([
         runScreener(setProgress),
         getMarketCondition(),
@@ -32,6 +34,18 @@ export function ScreenerDashboard() {
 
       setResults(screenerResults);
       setMarketCondition(condition);
+
+      // 検出履歴に保存（重複防止つき）
+      const priceMap = new Map<string, number>();
+      for (const r of screenerResults) {
+        priceMap.set(r.code, r.lastClose);
+      }
+      const newCount = addToHistory(screenerResults, priceMap);
+      if (newCount > 0) {
+        setHistoryMsg(`${newCount}件の新規銘柄を検出履歴に追加しました`);
+      } else if (screenerResults.length > 0) {
+        setHistoryMsg('全て既存の検出銘柄です（履歴に追加なし）');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -89,6 +103,13 @@ export function ScreenerDashboard() {
       {error && (
         <div className="bg-red-900/30 border border-red-700 rounded-lg p-4">
           <p className="text-red-300 text-sm">{error}</p>
+        </div>
+      )}
+
+      {/* 履歴追加メッセージ */}
+      {historyMsg && (
+        <div className="bg-blue-900/20 border border-blue-800 rounded-lg p-3">
+          <p className="text-blue-300 text-sm">{historyMsg}</p>
         </div>
       )}
 

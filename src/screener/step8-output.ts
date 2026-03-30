@@ -62,6 +62,7 @@ export function buildOutput(params: {
     avgVolume20: Math.round(avgVolume20),
     flags: resultFlags,
     ma25: Math.round(ma25 * 10) / 10,
+    lastClose: bars.length > 0 ? Math.round(bars[bars.length - 1].AdjC * 10) / 10 : 0,
   };
 }
 

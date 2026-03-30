@@ -23,6 +23,7 @@ async function fetchApi<T>(path: string, params?: Record<string, string>): Promi
 
   const resp = await fetch(url.toString(), {
     headers: { 'X-API-KEY': apiKey },
+    cache: 'no-store',
   });
 
   if (!resp.ok) {

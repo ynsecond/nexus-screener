@@ -111,6 +111,7 @@ export interface ScreenerResult {
   avgVolume20: number;
   flags: Flags;
   ma25: number;
+  lastClose: number;
 }
 
 /** 除外リスト */

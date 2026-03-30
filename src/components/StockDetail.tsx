@@ -1,10 +1,29 @@
-import type { ScreenerResult } from '../types';
+import { useState, useEffect } from 'react';
+import type { ScreenerResult, DailyBar } from '../types';
+import { fetchDailyBars } from '../api/jquants';
+import { formatDate, subtractBusinessDays } from '../utils/date';
+import { CandlestickChart } from './CandlestickChart';
 
 interface Props {
   result: ScreenerResult;
 }
 
 export function StockDetail({ result: r }: Props) {
+  const [bars, setBars] = useState<DailyBar[] | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    const now = new Date();
+    const from = subtractBusinessDays(now, 90);
+    fetchDailyBars(r.code, formatDate(from), formatDate(now))
+      .then((data) => { if (!cancelled) setBars(data); })
+      .catch(() => { if (!cancelled) setBars(null); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [r.code]);
+
   const scoreLabels = ['①レンジ圧縮', '②フロア形成', '③陰陽出来高比', '④ボラティリティ', '⑤ファンダ'];
   const scoreValues = [
     r.score.rangeCompression,
@@ -16,6 +35,14 @@ export function StockDetail({ result: r }: Props) {
 
   return (
     <div className="bg-gray-850 border border-gray-700 rounded-lg mx-3 mb-2 p-4 space-y-4">
+      {/* チャート */}
+      {loading && (
+        <div className="text-center text-gray-500 text-sm py-4">チャート読み込み中...</div>
+      )}
+      {bars && bars.length > 0 && (
+        <CandlestickChart bars={bars} boxUpper={r.boxUpper} boxLower={r.boxLower} />
+      )}
+
       {/* 基本情報 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <InfoItem label="銘柄コード" value={r.code.slice(0, 4)} />
