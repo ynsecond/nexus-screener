@@ -30,6 +30,20 @@ interface AggBar {
   V: number;
 }
 
+/** 日付文字列をYYYYMMDD形式に正規化 */
+function normalizeDate(dateStr: string): string {
+  return dateStr.replace(/-/g, '');
+}
+
+/** YYYYMMDD文字列からDateオブジェクトを生成 */
+function parseBarDate(dateStr: string): Date {
+  const clean = normalizeDate(dateStr);
+  const y = parseInt(clean.slice(0, 4));
+  const m = parseInt(clean.slice(4, 6)) - 1;
+  const d = parseInt(clean.slice(6, 8));
+  return new Date(y, m, d);
+}
+
 function aggregateBars(bars: DailyBar[], tf: Timeframe): AggBar[] {
   if (tf === 'daily') {
     return bars.map((b) => ({
@@ -44,16 +58,17 @@ function aggregateBars(bars: DailyBar[], tf: Timeframe): AggBar[] {
 
   const groups = new Map<string, DailyBar[]>();
   for (const b of bars) {
-    const d = new Date(b.Date.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'));
     let key: string;
     if (tf === 'weekly') {
-      // ISO week: Monday-based
+      const d = parseBarDate(b.Date);
       const day = d.getDay() || 7;
       const monday = new Date(d);
       monday.setDate(d.getDate() - day + 1);
-      key = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
+      key = `${monday.getFullYear()}${String(monday.getMonth() + 1).padStart(2, '0')}${String(monday.getDate()).padStart(2, '0')}`;
     } else {
-      key = b.Date.slice(0, 6); // YYYYMM
+      // 月足: YYYYMM でグループ化
+      const clean = normalizeDate(b.Date);
+      key = clean.slice(0, 6);
     }
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(b);
@@ -86,17 +101,8 @@ function calcRCI(bars: AggBar[], period: number): (number | null)[] {
   return bars.map((_, i) => {
     if (i < period - 1) return null;
     const slice = bars.slice(i - period + 1, i + 1);
-    // Date rank: 1=oldest ... n=newest (already sorted by date)
-    // Price rank: sort by close ascending, rank 1=lowest
     const indexed = slice.map((b, j) => ({ dateRank: j + 1, close: b.C }));
     const sorted = [...indexed].sort((a, b) => a.close - b.close);
-    const priceRankMap = new Map<number, number>();
-    sorted.forEach((item, j) => {
-      // Handle ties by averaging ranks
-      if (!priceRankMap.has(item.dateRank)) {
-        priceRankMap.set(item.dateRank, j + 1);
-      }
-    });
 
     let sumD2 = 0;
     for (const item of indexed) {
@@ -110,7 +116,7 @@ function calcRCI(bars: AggBar[], period: number): (number | null)[] {
 }
 
 function formatDateLabel(dateStr: string, tf: Timeframe): string {
-  const clean = dateStr.replace(/-/g, '');
+  const clean = normalizeDate(dateStr);
   const y = clean.slice(0, 4);
   const m = clean.slice(4, 6);
   const d = clean.slice(6, 8);
@@ -132,7 +138,7 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [timeframe, setTimeframe] = useState<Timeframe>('daily');
-  const [viewStart, setViewStart] = useState(-1); // -1 = auto (show latest)
+  const [viewStart, setViewStart] = useState(-1);
   const [viewCount, setViewCount] = useState(120);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const dragRef = useRef<{ startX: number; startViewStart: number } | null>(null);
@@ -140,14 +146,12 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
   const aggBars = aggregateBars(bars, timeframe);
   const totalBars = aggBars.length;
 
-  // Compute effective viewStart
   const effectiveStart = viewStart < 0
     ? Math.max(0, totalBars - viewCount)
     : Math.min(Math.max(0, viewStart), Math.max(0, totalBars - viewCount));
 
   const displayBars = aggBars.slice(effectiveStart, effectiveStart + viewCount);
 
-  // Pre-calculate indicators on full data, then slice
   const allMA = MA_CONFIGS.map((c) => calcMA(aggBars, c.period));
   const allRCI = RCI_CONFIGS.map((c) => calcRCI(aggBars, c.period));
 
@@ -196,6 +200,9 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
     displayMA.forEach((ma) => ma.forEach((v) => { if (v !== null) allPrices.push(v); }));
     if (boxUpper) allPrices.push(boxUpper);
     if (boxLower) allPrices.push(boxLower);
+
+    if (allPrices.length === 0) return;
+
     const minP = Math.min(...allPrices);
     const maxP = Math.max(...allPrices);
     const rangeP = maxP - minP || 1;
@@ -276,7 +283,6 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
     });
 
     // --- VOLUME SECTION ---
-    // Section border
     ctx.strokeStyle = '#252d40';
     ctx.lineWidth = 0.5;
     ctx.beginPath(); ctx.moveTo(PADDING_LEFT, volTop); ctx.lineTo(width - PADDING_RIGHT, volTop); ctx.stroke();
@@ -290,7 +296,6 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
       ctx.fillRect(x - candleW / 2, volTop + volH - h, candleW, h);
     });
 
-    // Vol label
     ctx.fillStyle = '#6b7b94';
     ctx.font = '9px monospace';
     ctx.textAlign = 'right';
@@ -301,7 +306,6 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
     ctx.lineWidth = 0.5;
     ctx.beginPath(); ctx.moveTo(PADDING_LEFT, rciTop); ctx.lineTo(width - PADDING_RIGHT, rciTop); ctx.stroke();
 
-    // RCI grid: +80, 0, -80
     const rciToY = (val: number) => rciTop + rciH / 2 - (val / 100) * (rciH / 2);
     ctx.strokeStyle = '#252d40';
     ctx.lineWidth = 0.5;
@@ -314,7 +318,6 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
       ctx.fillText(`${v}`, PADDING_LEFT - 5, y + 3);
     });
 
-    // RCI lines
     RCI_CONFIGS.forEach((config, ri) => {
       const rci = displayRCI[ri];
       ctx.strokeStyle = config.color;
@@ -330,7 +333,6 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
       ctx.stroke();
     });
 
-    // RCI label
     ctx.fillStyle = '#6b7b94';
     ctx.font = '9px monospace';
     ctx.textAlign = 'right';
@@ -351,33 +353,28 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
       const mx = mousePos.x;
       const my = mousePos.y;
 
-      // Find closest bar index
       const idx = Math.round((mx - PADDING_LEFT - barWidth / 2) / barWidth);
       if (idx >= 0 && idx < displayBars.length) {
         const cx = toX(idx);
 
-        // Vertical line across all sections
         ctx.strokeStyle = 'rgba(200, 210, 230, 0.3)';
         ctx.lineWidth = 0.5;
         ctx.setLineDash([2, 2]);
         ctx.beginPath(); ctx.moveTo(cx, PADDING_TOP); ctx.lineTo(cx, totalHeight - PADDING_BOTTOM); ctx.stroke();
         ctx.setLineDash([]);
 
-        // Horizontal line in active section
         ctx.strokeStyle = 'rgba(200, 210, 230, 0.3)';
         ctx.lineWidth = 0.5;
         ctx.setLineDash([2, 2]);
         ctx.beginPath(); ctx.moveTo(PADDING_LEFT, my); ctx.lineTo(width - PADDING_RIGHT, my); ctx.stroke();
         ctx.setLineDash([]);
 
-        // Info tooltip
         const bar = displayBars[idx];
         const dateLabel = formatDateLabel(bar.Date, timeframe);
         const change = bar.C - bar.O;
         const changePct = ((change / bar.O) * 100).toFixed(2);
         const changeSign = change >= 0 ? '+' : '';
 
-        // Background for tooltip
         const tooltipX = cx + 15 > width - 200 ? cx - 205 : cx + 15;
         const tooltipY = Math.min(my, totalHeight - 110);
         ctx.fillStyle = 'rgba(25, 32, 48, 0.92)';
@@ -400,7 +397,6 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
         ctx.fillStyle = '#8896b3';
         ctx.fillText(`出来高: ${bar.V.toLocaleString()}`, tooltipX + 8, ty);
 
-        // RCI values at this index
         const rciVals = displayRCI.map((rci) => rci[idx]);
         if (rciVals.some((v) => v !== null)) {
           ty += 16;
@@ -434,19 +430,29 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
     return () => ro.disconnect();
   }, [draw]);
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? 20 : -20;
-    setViewCount((prev) => {
-      const next = Math.max(20, Math.min(totalBars, prev + delta));
-      // Adjust viewStart to keep center point
-      if (viewStart >= 0) {
-        const center = viewStart + prev / 2;
-        setViewStart(Math.max(0, Math.round(center - next / 2)));
-      }
-      return next;
-    });
-  }, [totalBars, viewStart]);
+  // ネイティブwheelイベントでページスクロールを確実に防止
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const delta = e.deltaY > 0 ? 20 : -20;
+      setViewCount((prev) => {
+        const next = Math.max(20, Math.min(totalBars, prev + delta));
+        setViewStart((vs) => {
+          if (vs < 0) return vs;
+          const center = vs + prev / 2;
+          return Math.max(0, Math.round(center - next / 2));
+        });
+        return next;
+      });
+    };
+
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', onWheel);
+  }, [totalBars]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     dragRef.current = {
@@ -466,8 +472,8 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
     if (dragRef.current) {
       const dx = e.clientX - dragRef.current.startX;
       const chartW = rect.width - PADDING_LEFT - PADDING_RIGHT;
-      const barWidth = chartW / viewCount;
-      const barDelta = Math.round(-dx / barWidth);
+      const bw = chartW / viewCount;
+      const barDelta = Math.round(-dx / bw);
       const newStart = Math.max(0, Math.min(totalBars - viewCount, dragRef.current.startViewStart + barDelta));
       setViewStart(newStart);
     }
@@ -485,14 +491,15 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
   const tfLabel = (tf: Timeframe) => tf === 'daily' ? '日足' : tf === 'weekly' ? '週足' : '月足';
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
       {/* Controls */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex gap-1">
           {(['daily', 'weekly', 'monthly'] as Timeframe[]).map((tf) => (
             <button
+              type="button"
               key={tf}
-              onClick={() => setTimeframe(tf)}
+              onClick={(e) => { e.stopPropagation(); setTimeframe(tf); }}
               className={`text-xs px-2.5 py-1 rounded transition-colors ${
                 timeframe === tf
                   ? 'bg-blue-600 text-white'
@@ -532,7 +539,6 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
         <canvas
           ref={canvasRef}
           className="rounded"
-          onWheel={handleWheel}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
