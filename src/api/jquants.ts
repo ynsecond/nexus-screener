@@ -40,13 +40,24 @@ export async function fetchStockMaster(): Promise<StockMaster[]> {
   return fetchApi<StockMaster>('/api/master');
 }
 
+/** チャート用日足キャッシュ（銘柄コード → データ） */
+const barsCache = new Map<string, { data: DailyBar[]; expires: number }>();
+const CACHE_TTL = 10 * 60 * 1000; // 10分
+
 /** Step 3: 日足OHLCV取得 */
 export async function fetchDailyBars(
   code: string,
   from: string,
   to: string,
 ): Promise<DailyBar[]> {
-  return fetchApi<DailyBar>('/api/bars', { code, from, to });
+  const key = `${code}_${from}_${to}`;
+  const cached = barsCache.get(key);
+  if (cached && Date.now() < cached.expires) {
+    return cached.data;
+  }
+  const data = await fetchApi<DailyBar>('/api/bars', { code, from, to });
+  barsCache.set(key, { data, expires: Date.now() + CACHE_TTL });
+  return data;
 }
 
 /** 財務サマリ取得 */
@@ -62,6 +73,14 @@ export async function fetchTopixDaily(from: string, to: string): Promise<TopixDa
 /** 全銘柄の日足を日付指定で一括取得 */
 export async function fetchDailyBarsByDate(date: string): Promise<DailyBar[]> {
   return fetchApi<DailyBar>('/api/bars', { date });
+}
+
+/** キャッシュに直接データを投入（スクリーニング結果の再利用用） */
+export function prewarmBarsCache(code: string, from: string, to: string, data: DailyBar[]): void {
+  const key = `${code}_${from}_${to}`;
+  if (!barsCache.has(key)) {
+    barsCache.set(key, { data, expires: Date.now() + CACHE_TTL });
+  }
 }
 
 /** APIキー疎通確認 */
