@@ -141,6 +141,7 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
   const [viewCount, setViewCount] = useState(120);
   const mousePosRef = useRef<{ x: number; y: number } | null>(null);
   const dragRef = useRef<{ startX: number; startViewStart: number } | null>(null);
+  const touchRef = useRef<{ startX: number; startViewStart: number; pinchDist: number | null } | null>(null);
   const rafRef = useRef<number>(0);
 
   // Memoize heavy calculations
@@ -473,6 +474,88 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
     return () => canvas.removeEventListener('wheel', onWheel);
   }, [totalBars]);
 
+  // Touch events for mobile (native listeners with passive: false)
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const getDistance = (t1: Touch, t2: Touch) =>
+      Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        // Single finger → pan
+        e.preventDefault();
+        touchRef.current = {
+          startX: e.touches[0].clientX,
+          startViewStart: effectiveStart,
+          pinchDist: null,
+        };
+      } else if (e.touches.length === 2) {
+        // Two fingers → pinch zoom
+        e.preventDefault();
+        const dist = getDistance(e.touches[0], e.touches[1]);
+        touchRef.current = {
+          startX: touchRef.current?.startX ?? e.touches[0].clientX,
+          startViewStart: touchRef.current?.startViewStart ?? effectiveStart,
+          pinchDist: dist,
+        };
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!touchRef.current) return;
+      e.preventDefault();
+
+      if (e.touches.length === 2 && touchRef.current.pinchDist !== null) {
+        // Pinch zoom
+        const dist = getDistance(e.touches[0], e.touches[1]);
+        const scale = touchRef.current.pinchDist / dist;
+        const newCount = Math.max(20, Math.min(totalBars, Math.round(viewCount * scale)));
+        if (newCount !== viewCount) {
+          setViewCount(newCount);
+          setViewStart((vs) => {
+            if (vs < 0) return vs;
+            const center = vs + viewCount / 2;
+            return Math.max(0, Math.min(totalBars - newCount, Math.round(center - newCount / 2)));
+          });
+          touchRef.current.pinchDist = dist;
+        }
+      } else if (e.touches.length === 1) {
+        // Single finger pan
+        const rect = canvas.getBoundingClientRect();
+        const chartW = rect.width - PADDING_LEFT - PADDING_RIGHT;
+        const bw = chartW / viewCount;
+        const dx = e.touches[0].clientX - touchRef.current.startX;
+        const barDelta = Math.round(-dx / bw);
+        const newStart = Math.max(0, Math.min(totalBars - viewCount, touchRef.current.startViewStart + barDelta));
+        setViewStart(newStart);
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length === 0) {
+        touchRef.current = null;
+      } else if (e.touches.length === 1) {
+        // Went from 2 fingers to 1: restart pan from current position
+        touchRef.current = {
+          startX: e.touches[0].clientX,
+          startViewStart: effectiveStart,
+          pinchDist: null,
+        };
+      }
+    };
+
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+    canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+    return () => {
+      canvas.removeEventListener('touchstart', onTouchStart);
+      canvas.removeEventListener('touchmove', onTouchMove);
+      canvas.removeEventListener('touchend', onTouchEnd);
+    };
+  }, [totalBars, viewCount, effectiveStart]);
+
   // Mouse move uses ref + requestAnimationFrame (no React re-renders)
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const canvas = canvasRef.current;
@@ -550,7 +633,7 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
           ))}
         </div>
         <span className="text-xs text-gray-500 ml-auto">
-          {displayBars.length}/{totalBars}本 | ドラッグ:移動 ホイール:拡縮
+          {displayBars.length}/{totalBars}本 | スワイプ:移動 ピンチ:拡縮
         </span>
       </div>
 
