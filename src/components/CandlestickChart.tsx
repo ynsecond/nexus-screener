@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import type { DailyBar } from '../types';
 
 interface Props {
@@ -35,7 +35,7 @@ function normalizeDate(dateStr: string): string {
   return dateStr.replace(/-/g, '');
 }
 
-/** YYYYMMDD文字列からDateオブジェクトを生成 */
+/** YYYYMMDD or YYYY-MM-DD文字列からDateオブジェクトを生成 */
 function parseBarDate(dateStr: string): Date {
   const clean = normalizeDate(dateStr);
   const y = parseInt(clean.slice(0, 4));
@@ -66,7 +66,6 @@ function aggregateBars(bars: DailyBar[], tf: Timeframe): AggBar[] {
       monday.setDate(d.getDate() - day + 1);
       key = `${monday.getFullYear()}${String(monday.getMonth() + 1).padStart(2, '0')}${String(monday.getDate()).padStart(2, '0')}`;
     } else {
-      // 月足: YYYYMM でグループ化
       const clean = normalizeDate(b.Date);
       key = clean.slice(0, 6);
     }
@@ -124,7 +123,7 @@ function formatDateLabel(dateStr: string, tf: Timeframe): string {
   return `${m}/${d}`;
 }
 
-// Sections layout
+// Layout constants
 const PRICE_RATIO = 0.55;
 const VOL_RATIO = 0.15;
 const RCI_RATIO = 0.22;
@@ -140,29 +139,41 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
   const [timeframe, setTimeframe] = useState<Timeframe>('daily');
   const [viewStart, setViewStart] = useState(-1);
   const [viewCount, setViewCount] = useState(120);
-  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+  const mousePosRef = useRef<{ x: number; y: number } | null>(null);
   const dragRef = useRef<{ startX: number; startViewStart: number } | null>(null);
+  const rafRef = useRef<number>(0);
 
-  const aggBars = aggregateBars(bars, timeframe);
+  // Memoize heavy calculations
+  const aggBars = useMemo(() => aggregateBars(bars, timeframe), [bars, timeframe]);
   const totalBars = aggBars.length;
 
   const effectiveStart = viewStart < 0
     ? Math.max(0, totalBars - viewCount)
     : Math.min(Math.max(0, viewStart), Math.max(0, totalBars - viewCount));
 
-  const displayBars = aggBars.slice(effectiveStart, effectiveStart + viewCount);
+  const displayBars = useMemo(
+    () => aggBars.slice(effectiveStart, effectiveStart + viewCount),
+    [aggBars, effectiveStart, viewCount],
+  );
 
-  const allMA = MA_CONFIGS.map((c) => calcMA(aggBars, c.period));
-  const allRCI = RCI_CONFIGS.map((c) => calcRCI(aggBars, c.period));
+  const allMA = useMemo(() => MA_CONFIGS.map((c) => calcMA(aggBars, c.period)), [aggBars]);
+  const allRCI = useMemo(() => RCI_CONFIGS.map((c) => calcRCI(aggBars, c.period)), [aggBars]);
 
-  const displayMA = allMA.map((ma) => ma.slice(effectiveStart, effectiveStart + viewCount));
-  const displayRCI = allRCI.map((rci) => rci.slice(effectiveStart, effectiveStart + viewCount));
+  const displayMA = useMemo(
+    () => allMA.map((ma) => ma.slice(effectiveStart, effectiveStart + viewCount)),
+    [allMA, effectiveStart, viewCount],
+  );
+  const displayRCI = useMemo(
+    () => allRCI.map((rci) => rci.slice(effectiveStart, effectiveStart + viewCount)),
+    [allRCI, effectiveStart, viewCount],
+  );
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container || displayBars.length === 0) return;
 
+    const mousePos = mousePosRef.current;
     const dpr = window.devicePixelRatio || 1;
     const width = container.clientWidth;
     const totalHeight = 480;
@@ -196,8 +207,10 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
 
     // --- PRICE SECTION ---
     const allPrices: number[] = [];
-    displayBars.forEach((b) => { allPrices.push(b.H, b.L); });
-    displayMA.forEach((ma) => ma.forEach((v) => { if (v !== null) allPrices.push(v); }));
+    for (const b of displayBars) { allPrices.push(b.H, b.L); }
+    for (const ma of displayMA) {
+      for (const v of ma) { if (v !== null) allPrices.push(v); }
+    }
     if (boxUpper) allPrices.push(boxUpper);
     if (boxLower) allPrices.push(boxLower);
 
@@ -240,7 +253,8 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
     }
 
     // Candlesticks
-    displayBars.forEach((bar, i) => {
+    for (let i = 0; i < displayBars.length; i++) {
+      const bar = displayBars[i];
       const x = toX(i);
       const oY = toY(bar.O);
       const cY = toY(bar.C);
@@ -253,10 +267,8 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
       ctx.fillStyle = color;
       ctx.lineWidth = 1;
 
-      // Wick
       ctx.beginPath(); ctx.moveTo(x, hY); ctx.lineTo(x, lY); ctx.stroke();
 
-      // Body
       const bodyTop = Math.min(oY, cY);
       const bodyH = Math.max(1, Math.abs(cY - oY));
       if (isBull) {
@@ -264,37 +276,40 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
       } else {
         ctx.fillRect(x - candleW / 2, bodyTop, candleW, bodyH);
       }
-    });
+    }
 
     // Moving averages
-    MA_CONFIGS.forEach((config, mi) => {
+    for (let mi = 0; mi < MA_CONFIGS.length; mi++) {
       const ma = displayMA[mi];
-      ctx.strokeStyle = config.color;
+      ctx.strokeStyle = MA_CONFIGS[mi].color;
       ctx.lineWidth = 1.2;
       ctx.beginPath();
       let started = false;
-      ma.forEach((v, i) => {
-        if (v === null) return;
+      for (let i = 0; i < ma.length; i++) {
+        const v = ma[i];
+        if (v === null) continue;
         const x = toX(i);
         const y = toY(v);
         if (!started) { ctx.moveTo(x, y); started = true; } else { ctx.lineTo(x, y); }
-      });
+      }
       ctx.stroke();
-    });
+    }
 
     // --- VOLUME SECTION ---
     ctx.strokeStyle = '#252d40';
     ctx.lineWidth = 0.5;
     ctx.beginPath(); ctx.moveTo(PADDING_LEFT, volTop); ctx.lineTo(width - PADDING_RIGHT, volTop); ctx.stroke();
 
-    const maxVol = Math.max(...displayBars.map((b) => b.V), 1);
-    displayBars.forEach((bar, i) => {
+    let maxVol = 1;
+    for (const b of displayBars) { if (b.V > maxVol) maxVol = b.V; }
+    for (let i = 0; i < displayBars.length; i++) {
+      const bar = displayBars[i];
       const x = toX(i);
       const h = (bar.V / maxVol) * (volH - 4);
       const isBull = bar.C >= bar.O;
       ctx.fillStyle = isBull ? 'rgba(38,166,154,0.6)' : 'rgba(239,83,80,0.6)';
       ctx.fillRect(x - candleW / 2, volTop + volH - h, candleW, h);
-    });
+    }
 
     ctx.fillStyle = '#6b7b94';
     ctx.font = '9px monospace';
@@ -309,29 +324,30 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
     const rciToY = (val: number) => rciTop + rciH / 2 - (val / 100) * (rciH / 2);
     ctx.strokeStyle = '#252d40';
     ctx.lineWidth = 0.5;
-    [80, 0, -80].forEach((v) => {
+    for (const v of [80, 0, -80]) {
       const y = rciToY(v);
       ctx.beginPath(); ctx.moveTo(PADDING_LEFT, y); ctx.lineTo(width - PADDING_RIGHT, y); ctx.stroke();
       ctx.fillStyle = '#6b7b94';
       ctx.font = '9px monospace';
       ctx.textAlign = 'right';
       ctx.fillText(`${v}`, PADDING_LEFT - 5, y + 3);
-    });
+    }
 
-    RCI_CONFIGS.forEach((config, ri) => {
+    for (let ri = 0; ri < RCI_CONFIGS.length; ri++) {
       const rci = displayRCI[ri];
-      ctx.strokeStyle = config.color;
+      ctx.strokeStyle = RCI_CONFIGS[ri].color;
       ctx.lineWidth = 1.2;
       ctx.beginPath();
       let started = false;
-      rci.forEach((v, i) => {
-        if (v === null) return;
+      for (let i = 0; i < rci.length; i++) {
+        const v = rci[i];
+        if (v === null) continue;
         const x = toX(i);
         const y = rciToY(v);
         if (!started) { ctx.moveTo(x, y); started = true; } else { ctx.lineTo(x, y); }
-      });
+      }
       ctx.stroke();
-    });
+    }
 
     ctx.fillStyle = '#6b7b94';
     ctx.font = '9px monospace';
@@ -361,11 +377,6 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
         ctx.lineWidth = 0.5;
         ctx.setLineDash([2, 2]);
         ctx.beginPath(); ctx.moveTo(cx, PADDING_TOP); ctx.lineTo(cx, totalHeight - PADDING_BOTTOM); ctx.stroke();
-        ctx.setLineDash([]);
-
-        ctx.strokeStyle = 'rgba(200, 210, 230, 0.3)';
-        ctx.lineWidth = 0.5;
-        ctx.setLineDash([2, 2]);
         ctx.beginPath(); ctx.moveTo(PADDING_LEFT, my); ctx.lineTo(width - PADDING_RIGHT, my); ctx.stroke();
         ctx.setLineDash([]);
 
@@ -375,13 +386,22 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
         const changePct = ((change / bar.O) * 100).toFixed(2);
         const changeSign = change >= 0 ? '+' : '';
 
-        const tooltipX = cx + 15 > width - 200 ? cx - 205 : cx + 15;
-        const tooltipY = Math.min(my, totalHeight - 110);
+        // Tooltip
+        const tooltipW = 190;
+        const tooltipH = 115;
+        const tooltipX = cx + 15 > width - tooltipW - 10 ? cx - tooltipW - 10 : cx + 15;
+        const tooltipY = Math.min(Math.max(my, PADDING_TOP), totalHeight - tooltipH - 10);
+
         ctx.fillStyle = 'rgba(25, 32, 48, 0.92)';
         ctx.strokeStyle = '#3a4560';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.roundRect(tooltipX, tooltipY, 190, 100, 4);
+        // roundRect fallback
+        if (ctx.roundRect) {
+          ctx.roundRect(tooltipX, tooltipY, tooltipW, tooltipH, 4);
+        } else {
+          ctx.rect(tooltipX, tooltipY, tooltipW, tooltipH);
+        }
         ctx.fill();
         ctx.stroke();
 
@@ -395,21 +415,20 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
         ctx.fillStyle = change >= 0 ? '#26a69a' : '#ef5350';
         ctx.fillText(`変化: ${changeSign}${change.toFixed(0)} (${changeSign}${changePct}%)`, tooltipX + 8, ty); ty += 16;
         ctx.fillStyle = '#8896b3';
-        ctx.fillText(`出来高: ${bar.V.toLocaleString()}`, tooltipX + 8, ty);
+        ctx.fillText(`出来高: ${bar.V.toLocaleString()}`, tooltipX + 8, ty); ty += 16;
 
         const rciVals = displayRCI.map((rci) => rci[idx]);
         if (rciVals.some((v) => v !== null)) {
-          ty += 16;
           const rciText = RCI_CONFIGS.map((c, ri) =>
             rciVals[ri] !== null ? `${c.label}: ${rciVals[ri]!.toFixed(0)}` : '',
           ).filter(Boolean).join('  ');
-          ctx.fillStyle = '#8896b3';
           ctx.fillText(`RCI ${rciText}`, tooltipX + 8, ty);
         }
       }
     }
-  }, [displayBars, displayMA, displayRCI, mousePos, boxUpper, boxLower, timeframe]);
+  }, [displayBars, displayMA, displayRCI, boxUpper, boxLower, timeframe]);
 
+  // Draw on data change
   useEffect(() => {
     draw();
   }, [draw]);
@@ -430,7 +449,7 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
     return () => ro.disconnect();
   }, [draw]);
 
-  // ネイティブwheelイベントでページスクロールを確実に防止
+  // Native wheel event to prevent page scroll
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -454,20 +473,12 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
     return () => canvas.removeEventListener('wheel', onWheel);
   }, [totalBars]);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    dragRef.current = {
-      startX: e.clientX,
-      startViewStart: effectiveStart,
-    };
-  }, [effectiveStart]);
-
+  // Mouse move uses ref + requestAnimationFrame (no React re-renders)
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    setMousePos({ x, y });
+    mousePosRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
 
     if (dragRef.current) {
       const dx = e.clientX - dragRef.current.startX;
@@ -476,17 +487,30 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
       const barDelta = Math.round(-dx / bw);
       const newStart = Math.max(0, Math.min(totalBars - viewCount, dragRef.current.startViewStart + barDelta));
       setViewStart(newStart);
+    } else {
+      // Redraw only for crosshair (via rAF, no state change)
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => draw());
     }
-  }, [viewCount, totalBars]);
+  }, [viewCount, totalBars, draw]);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    dragRef.current = {
+      startX: e.clientX,
+      startViewStart: effectiveStart,
+    };
+  }, [effectiveStart]);
 
   const handleMouseUp = useCallback(() => {
     dragRef.current = null;
   }, []);
 
   const handleMouseLeave = useCallback(() => {
-    setMousePos(null);
+    mousePosRef.current = null;
     dragRef.current = null;
-  }, []);
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => draw());
+  }, [draw]);
 
   const tfLabel = (tf: Timeframe) => tf === 'daily' ? '日足' : tf === 'weekly' ? '週足' : '月足';
 
@@ -499,7 +523,7 @@ export function CandlestickChart({ bars, boxUpper, boxLower }: Props) {
             <button
               type="button"
               key={tf}
-              onClick={(e) => { e.stopPropagation(); setTimeframe(tf); }}
+              onClick={(e) => { e.stopPropagation(); e.preventDefault(); setTimeframe(tf); }}
               className={`text-xs px-2.5 py-1 rounded transition-colors ${
                 timeframe === tf
                   ? 'bg-blue-600 text-white'
